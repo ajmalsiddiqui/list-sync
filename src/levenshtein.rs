@@ -14,18 +14,17 @@ mod util {
 
     // Returns an initialized distance table of dimensions m+1 * n+1
     // This function will transfer ownership of `distances` to calling function
-    pub fn get_distance_table(m: usize, n: usize) -> Vec<Vec<usize>> {
-        let mut distances: Vec<Vec<usize>> = Vec::new();
+    pub fn get_distance_table<T: Default + Clone, F: Fn(usize) -> T + Copy>(m: usize, n: usize, init: F)-> Vec<Vec<T>> {
+        let mut distances: Vec<Vec<T>> = Vec::new();
 
-        // The first row
-        distances.push((0..n+1).collect());
+        distances.push((0..n+1).map(init).collect());
 
         for i in 1..m+1 {
             // initialize the whole row to sentinel
             //  TODO change this to -1
-            distances.push(vec![99; n+1]);
+            distances.push(vec![T::default(); n+1]);
             // update the first item in the row
-            distances[i][0] = i;
+            distances[i][0] = init(i);
         }
 
         distances
@@ -43,22 +42,18 @@ pub fn levenshtein_naive<T>(i1: &[T], i2: &[T]) -> usize
 
     // base case
     if min(i, j) == 0 {
-        return max(i, j);
-    }
-
-    // returns value from the if/else expression and assigns to k
-    let k = if i1[i-1] == i2[j-1] {
-        0
+        max(i, j)
+    } else if i1[i-1] == i2[j-1] {
+        levenshtein_naive(&i1[..i-1], &i2[..j-1])
     } else {
-        1
-    };
 
-    let delete = levenshtein_naive(&i1[..i-1], &i2) + 1;
-    let insert = levenshtein_naive(&i1, &i2[..j-1]) + 1;
-    let substitute = levenshtein_naive(&i1[..i-1], &i2[..j-1]) + k;
+        let delete = levenshtein_naive(&i1[..i-1], &i2);
+        let insert = levenshtein_naive(&i1, &i2[..j-1]);
+        let substitute = levenshtein_naive(&i1[..i-1], &i2[..j-1]);
 
-    // implicit returns
-    min(min(insert, delete), substitute)
+        // implicit returns
+        1 + insert.min(delete).min(substitute)
+    }
 }
 
 pub fn levenshtein_tabulation<T>(i1: &[T], i2: &[T]) -> usize
@@ -71,10 +66,10 @@ pub fn levenshtein_tabulation<T>(i1: &[T], i2: &[T]) -> usize
     // before hand to improve performance
 
     // table of distances
-    let mut distances = get_distance_table(m, n);
+    let mut distances:Vec<Vec<usize>> = get_distance_table(m, n, |i| (i));
 
-    for i in 1..distances.len() {
-        for j in 1..distances[0].len() {
+    for i in 1..m+1 {
+        for j in 1..n+1 {
             // returns value from the if/else expression and assigns to k
             let k = if i1[i-1] == i2[j-1] {
                 0
@@ -82,11 +77,11 @@ pub fn levenshtein_tabulation<T>(i1: &[T], i2: &[T]) -> usize
                 1
             };
 
-            let delete = distances[i-1][j] + 1;
-            let insert = distances[i][j-1] + 1;
-            let substitute = distances[i-1][j-1] + k;
+            let delete = distances[i-1][j];
+            let insert = distances[i][j-1];
+            let substitute = distances[i-1][j-1];
 
-            distances[i][j] = min(min(delete, insert), substitute);
+            distances[i][j] = k + delete.min(insert).min(substitute);
         }
     }
 
@@ -102,48 +97,42 @@ pub fn levenshtein_memoization<T>(i1: &[T], i2: &[T]) -> usize
     // This funciton actually does all the recursion
     // i and j are the indices of s1 and s2 being considered
     // distances is a mutable reference because obviously it'll be filled up as needed
-    fn levenshtein_memoization_helper<T>(i1: &[T], i2: &[T], i: usize, j: usize, distances: &mut Vec<Vec<usize>>) -> usize
+    fn levenshtein_memoization_helper<T>(i1: &[T], i2: &[T], i: usize, j: usize, distances: &mut Vec<Vec<Option<usize>>>) -> usize
         where T: Eq
     {
         // check the cache first
-        // 99 is our sentinel value :facepalm:
-        if distances[i][j] < 99 {
-            return distances[i][j];
+        if distances[i][j].is_none() {
+
+            // couldn't find the value, time to recursively calculate it and update the cache
+            
+            // returns value from the if/else expression and assigns to distances[i][j]
+            distances[i][j] = {
+                // base case
+                if min(i, j) == 0 {
+                    Some(max(i, j))
+                } else if i1[i-1] == i2[j-1] {
+                    Some(levenshtein_memoization_helper(i1, i2, i-1, j-1, distances))
+                } else {
+                    // note that we don't need to pass distances as &mut distances
+                    // because distances is already a mutable reference (see func signature)
+                    Some(
+                        1 + levenshtein_memoization_helper(i1, i2, i-1, j, distances)
+                        .min(levenshtein_memoization_helper(i1, i2, i, j-1, distances))
+                        .min(levenshtein_memoization_helper(i1, i2, i-1, j-1, distances))
+                    )
+                }
+            };
         }
-
-        // base case
-        if min(i1[..i].len(), i2[..j].len()) == 0 {
-            return max(i1[..i].len(), i2[..j].len());
-        }
-
-        // couldn't find the value, time to recursively calculate it
-
-        // returns value from the if/else expression and assigns to k
-        let k = if i1[i-1] == i2[j-1] {
-            0
-        } else {
-            1
-        };
-
-        // note that we don't need to pass distances as &mut distances
-        // because distances is already a mutable reference (see func signature)
-        let delete = levenshtein_memoization_helper(i1, i2, i-1, j, distances) + 1;
-        let insert = levenshtein_memoization_helper(i1, i2, i, j-1, distances) + 1;
-        let substitute = levenshtein_memoization_helper(i1, i2, i-1, j-1, distances) + k;
-
-        let distance = min(min(delete, insert), substitute);
-
-        // update the cache
-        distances[i][j] = distance;
-
+            
         // this is returned implicitly
-        distance
+        distances[i][j].unwrap()
+
     }
 
     let m = i1.len();
     let n = i2.len();
 
-    let mut distances = get_distance_table(m, n);
+    let mut distances: Vec<Vec<Option<usize>>> = get_distance_table(m, n, |i| (Some(i)));
 
     let distance = levenshtein_memoization_helper(i1, i2, m, n, &mut distances);
 
