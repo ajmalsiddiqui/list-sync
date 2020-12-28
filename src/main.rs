@@ -14,15 +14,17 @@ fn main() {
     let content1 = "Hello";
 
     // We're adding the same item to both lists so that they'll be equal
-    list1.add_item(&content1, false);
-    list2.add_item(&content1, false);
+    list1.add_file(content1);
+    list2.add_file(content1);
 
-    let dist = levenshtein::levenshtein_tabulation(&list1.items, &list2.items);
+    let dist = levenshtein::levenshtein_tabulation(&list1.items().unwrap(), &list2.items().unwrap());
     println!("Edit distance: {}", dist);
     assert_eq!(dist, 0);
+    
 
-    list1.add_item(&"Hey", false);
-    let dist = levenshtein::levenshtein_tabulation(&list1.items, &list2.items);
+    list1.add_file("Hey");
+
+    let dist = levenshtein::levenshtein_tabulation(&list1.items().unwrap(), &list2.items().unwrap());
     println!("Edit distance: {}", dist);
     assert_eq!(dist, 1);
 }
